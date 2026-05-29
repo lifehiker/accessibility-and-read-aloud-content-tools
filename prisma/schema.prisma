@@ -1,0 +1,73 @@
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id                    String        @id @default(cuid())
+  email                 String        @unique
+  password              String?
+  name                  String?
+  plan                  String        @default("free")
+  altTextCreditsUsed    Int           @default(0)
+  readAloudSessionsUsed Int           @default(0)
+  creditsResetAt        DateTime      @default(now())
+  isAdmin               Boolean       @default(false)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  jobs                  AssetJob[]
+  usage                 UsageLedger[]
+  subscription          Subscription?
+}
+
+model AssetJob {
+  id         String      @id @default(cuid())
+  userId     String
+  type       String      // ALT_TEXT | READ_ALOUD
+  status     String      @default("PENDING") // PENDING | PROCESSING | DONE | FAILED
+  inputText  String?
+  outputText String?
+  metaJson   String?
+  createdAt  DateTime    @default(now())
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files      AssetFile[]
+  ledger     UsageLedger[]
+}
+
+model AssetFile {
+  id       String   @id @default(cuid())
+  jobId    String
+  url      String
+  mimeType String
+  fileName String
+  fileSize Int
+  job      AssetJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model UsageLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  eventType String
+  units     Int
+  jobId     String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       AssetJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  plan                 String   @default("free")
+  status               String   @default("active")
+  currentPeriodEnd     DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

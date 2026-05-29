@@ -934,100 +934,38 @@ Reaching the conservative figure likely requires either:
 
 ---
 
+## PRD Completion Contract
+
+This build is not complete until the implementation covers the whole PRD, not just a scaffold or a single happy path.
+
+Before coding:
+
+1. Read the PRD end-to-end.
+2. Create `FORGE_PRD_TASKS.md`.
+3. Break the PRD into an explicit checklist covering data model, auth, every user-facing page, every API/server action, every core workflow, billing/email/storage integrations or safe fallbacks, marketing/SEO pages, Docker/deploy config, and verification.
+
+During coding:
+
+1. Implement the checklist in dependency order: foundation -> data/auth -> core workflows -> secondary workflows -> marketing/pages -> deployment -> QA.
+2. After each major phase, re-read the relevant PRD sections and update `FORGE_PRD_TASKS.md`.
+3. Use realistic local/mock/safe-fallback implementations when external credentials are unavailable.
+4. Do not leave placeholder pages, TODO-only routes, fake buttons, or unimplemented workflows.
+
+Before finishing:
+
+1. Run `npm run build` and fix all failures.
+2. Start the dev server and smoke-test primary routes.
+3. Create `FORGE_COMPLETION_AUDIT.md` mapping every major PRD requirement to concrete files/routes/components/actions that implement it.
+4. List any truly external credential requirements in `HUMAN_INPUT_NEEDED.md`, but only after implementing guarded code paths and safe fallbacks.
+5. Output `FORGE_BUILD_COMPLETE` only after the task ledger and audit exist.
+
+---
+
 ## Dockerfile
 
-```dockerfile
-# ============================================================
-# BASE DOCKERFILE — for apps WITHOUT a database
-# If this app uses Prisma/SQLite, see the "With Prisma" section below
-# ============================================================
+**Forge writes the Dockerfile automatically after your build completes — do NOT author or modify a Dockerfile yourself.** It will be overwritten with the canonical template (`DOCKERFILE_SIMPLE` for apps without Prisma, `DOCKERFILE_PRISMA` if `package.json` includes `@prisma/client`).
 
-# Stage 1: Dependencies
-FROM node:20-slim AS deps
-WORKDIR /app
-COPY package.json package-lock.json* ./
-# --ignore-scripts prevents postinstall hooks (e.g. prisma generate) from running
-# here where schema.prisma isn't available yet. Scripts run in the builder stage.
-RUN npm ci --ignore-scripts
-
-# Stage 2: Build
-FROM node:20-slim AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-# Provide build-time defaults so the build succeeds with no env vars configured
-ENV AUTH_SECRET="build-time-placeholder-secret"
-ENV NEXT_PUBLIC_APP_URL="https://localhost:3000"
-# Run any postinstall scripts now that all source files are present
-RUN npm rebuild 2>/dev/null || true
-RUN npm run build
-
-# Stage 3: Runner
-FROM node:20-slim AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-# Default AUTH_SECRET — app works with no Coolify env vars; override for production
-ENV AUTH_SECRET="forge-app-default-secret-override-in-production"
-ENV NEXT_PUBLIC_APP_URL=""
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-EXPOSE 3000
-ENV PORT=3000
-CMD ["node", "server.js"]
-
-# ============================================================
-# WITH PRISMA/SQLITE — replace the above Dockerfile entirely
-# Use this when the PRD requires data persistence or user auth
-# ============================================================
-#
-# FROM node:20-slim AS deps
-# WORKDIR /app
-# COPY package.json package-lock.json* ./
-# # --ignore-scripts prevents prisma generate from running before schema.prisma is copied
-# RUN npm ci --ignore-scripts
-#
-# FROM node:20-slim AS builder
-# # Install OpenSSL for Prisma schema engine (debian-openssl-3.0.x target)
-# RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
-# WORKDIR /app
-# COPY --from=deps /app/node_modules ./node_modules
-# COPY . .
-# ENV DATABASE_URL="file:/tmp/build.db"
-# ENV AUTH_SECRET="build-time-placeholder-secret"
-# ENV NEXT_PUBLIC_APP_URL="https://localhost:3000"
-# # Generate Prisma client now that schema.prisma is available
-# RUN npx prisma generate
-# RUN npm run build
-#
-# FROM node:20-slim AS runner
-# # Install OpenSSL for Prisma schema engine at runtime
-# RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
-# WORKDIR /app
-# ENV NODE_ENV=production
-# ENV DATABASE_URL="file:/data/app.db"
-# ENV AUTH_SECRET="forge-app-default-secret-override-in-production"
-# ENV NEXT_PUBLIC_APP_URL=""
-# RUN addgroup --system --gid 1001 nodejs
-# RUN adduser --system --uid 1001 nextjs
-# RUN mkdir -p /data && chown nextjs:nodejs /data
-# COPY --from=builder /app/public ./public
-# COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-# COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-# # Copy full node_modules so the Prisma CLI has all its runtime deps (v6+ requires effect, c12, etc.)
-# COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
-# USER nextjs
-# EXPOSE 3000
-# ENV PORT=3000
-# CMD ["sh", "-c", "node node_modules/prisma/build/index.js db push --skip-generate && echo 'DB schema initialized' && node server.js"]
-```
+Your responsibility: ensure `next.config.ts` (or `next.config.mjs`) sets `output: "standalone"` so the standalone bundle is produced by `npm run build`. If you skip that, the Dockerfile's `COPY .next/standalone` step fails at deploy time.
 
 ---
 
@@ -1069,7 +1007,6 @@ When the build is complete and verified:
 - [ ] `README.md` - Project description, setup instructions, tech stack
 - [ ] `.gitignore` - Appropriate for Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui
 - [ ] `.env.example` - Template for required environment variables (see below)
-- [ ] `Dockerfile` - Production-ready container build
 - [ ] `package.json` (or equivalent) - Dependencies and scripts
 
 ---
@@ -1114,18 +1051,106 @@ AUTH_SECRET="your-secret-here"  # generate with: openssl rand -base64 32
 
 ## Key Implementation Notes
 
+### Dependency Policy (READ THIS FIRST — applies to ALL deps, not just new ones)
+
+Forge always moves **forward** on dependency versions. Never downgrade a foundational dep to work around a build or runtime error — refactor the calling code, or regenerate the affected module from scratch, instead.
+
+**Why:** apps Forge ships are MVPs with light surface area. The cost of refactoring against a current major is small; the cost of dragging a stale dep across the fleet is large (CVEs, eventual hard-forced upgrades, and per-app drift like the Prisma 5/6/7 fleet incident).
+
+When a dep upgrade breaks a build:
+1. **First**: refactor the calling code to match the new API. Read the dep's migration guide; rewrite the affected file(s).
+2. **If that's impractical**: regenerate the affected module from scratch using the latest dep's idioms.
+3. **Last resort**: regenerate the whole app from scratch with the current foundational stack. Do NOT downgrade.
+
+Specific minimums Forge enforces (do not go below these in any new build or change):
+- **Next.js:** latest stable (currently 16.x). Always use App Router.
+- **React:** latest stable (currently 19.2+).
+- **Prisma:** latest stable major (currently **7+**). See the Database section for the required pattern.
+- **Node:** 20-slim in the Dockerfile (do not change).
+
 ### Database (only if PRD requires persistence)
-- Use **SQLite** via Prisma: `provider = "sqlite"`, `url = env("DATABASE_URL")`
-- `DATABASE_URL` defaults to `file:/data/app.db` in the Dockerfile — no Coolify config needed
-- For local dev: `DATABASE_URL="file:./dev.db"` in `.env.local`
-- Run `npx prisma db push` after schema changes
-- **Do NOT use PostgreSQL** — no PostgreSQL server is provisioned in the deployment environment
+
+Forge standardises on **Prisma 7 + SQLite + the better-sqlite3 driver adapter**. This is the only supported pattern.
+
+**Required deps in `package.json`:**
+```
+"@prisma/client": "^7.0.0",
+"@prisma/adapter-better-sqlite3": "^7.0.0",
+"prisma": "^7.0.0"
+```
+
+**`prisma/schema.prisma` (datasource block, no url):**
+```prisma
+datasource db {
+  provider = "sqlite"
+}
+```
+
+The `url` goes in `prisma.config.ts` (Prisma 7 moved it out of the schema):
+
+**`prisma.config.ts` at repo root:**
+```ts
+import { defineConfig } from '@prisma/config';
+
+export default defineConfig({
+  datasource: {
+    url: process.env.DATABASE_URL ?? 'file:./dev.db',
+  },
+});
+```
+
+**PrismaClient construction (in `src/lib/db.ts` or equivalent — Prisma 7 REQUIRES `adapter`):**
+```ts
+import { PrismaClient } from "@prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./dev.db" }),
+  });
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+```
+
+Without the adapter, Prisma 7 fails at `next build` with `PrismaClientConstructorValidationError: Using engine type "client" requires either "adapter" or "accelerateUrl"`.
+
+**Runtime:**
+- `DATABASE_URL` defaults to `file:/data/app.db` in the Dockerfile — no Coolify config needed.
+- For local dev: `DATABASE_URL="file:./dev.db"` in `.env.local`.
+- Run `npx prisma db push` after schema changes.
+- The Dockerfile CMD runs `prisma db push --url "$DATABASE_URL"` at container start to sync the schema.
+
+**Forbidden:**
+- **Do NOT use PostgreSQL** — no Postgres server is provisioned. `provider = "postgresql"` is a build failure even if you intended SQLite at runtime; Prisma 7's strict adapter check rejects the mismatch.
+- **Do NOT pin Prisma to `^5` or `^6`** to dodge the adapter requirement. See the Dependency Policy above — refactor instead of downgrading.
+- **Do NOT keep `url = env("DATABASE_URL")` inside `schema.prisma`** — it belongs in `prisma.config.ts` in Prisma 7.
 
 ### Authentication (only if PRD requires user login)
 - Use **NextAuth v5** with the **Credentials provider** (email + password)
 - **Do NOT use Google OAuth** — no OAuth credentials are configured in deployment
 - Hash passwords with **bcrypt** (`bcryptjs` package)
 - Session strategy: **`"jwt"`** (not `"database"`) — required for Credentials provider
+
+### Public Routes Contract (CRITICAL when adding auth)
+
+If you add auth, the following routes MUST render to status 200 for an unauthenticated visitor — they are how customers find the product, evaluate it, and sign up:
+
+- `/` — homepage / landing
+- `/pricing` — pricing page (if pricing exists)
+- `/blog`, `/blog/[slug]` — blog (if any)
+- `/about`, `/contact`, `/legal/*` — marketing supporting pages
+- `/login`, `/signup` — auth entry points themselves
+
+Implementation rules:
+- Place public pages OUTSIDE any `(app)` / `(authenticated)` / `(dashboard)` route group, AND outside any layout that calls `requireUser()` / `auth()` / `getServerSession()`.
+- Authenticated routes go INSIDE a route group whose layout gates with `requireUser()` (e.g. `src/app/(app)/dashboard`, `src/app/(app)/settings`, `src/app/(app)/billing` if billing is the user's own subscription page). The verifier knows about Next.js route groups and expects these to redirect to `/login` when visited anonymously.
+- If you write a `middleware.ts`, its `matcher` MUST exclude the public routes above. A blanket matcher like `/((?!api|_next).*)` that protects everything is a build failure.
+- A user with no session who visits `/` and lands on `/login` is a build failure — Forge's verifier will detect it and reject the build.
+
+If the PRD does NOT require auth, do NOT add NextAuth at all. No middleware, no `requireUser`, no `(app)` group — just public pages.
 - `AUTH_SECRET` defaults are baked into the Dockerfile; app works out of the box
 
 ### Payments (only if PRD explicitly requires it)
@@ -1154,6 +1179,11 @@ AUTH_SECRET="your-secret-here"  # generate with: openssl rand -base64 32
   ```
 - Next.js evaluates module-level code during `next build` page data collection — missing env vars at module scope crash the build
 - Same rule applies to Stripe, OpenAI, and ALL third-party SDK clients — always lazy-initialize inside handler functions
+
+### Fonts
+- **Do NOT use `next/font/google`** — it fetches font files during `next build`, which can hang or fail in automated/offline build environments.
+- Use CSS/system font stacks by default.
+- If a custom font is truly required, commit the font file into the repo and use `next/font/local`; never depend on a build-time network font fetch.
 
 ### Deployment
 - Coolify with Docker — always set `output: "standalone"` in next.config.ts
