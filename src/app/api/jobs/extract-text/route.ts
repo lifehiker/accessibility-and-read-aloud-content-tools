@@ -45,27 +45,26 @@ async function extractTextFromImageWithOpenAI(
 export async function POST(req: NextRequest) {
   const session = await auth();
 
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-
-  const userId = session.user.id;
-  const user = await db.user.findUnique({ where: { id: userId } });
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  // Check usage limits
-  const usageCheck = canUseReadAloud(user.plan, user.readAloudSessionsUsed, user.creditsResetAt);
-  if (!usageCheck.allowed) {
-    return NextResponse.json({ error: usageCheck.reason }, { status: 429 });
-  }
-
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const pastedText = formData.get("text") as string | null;
+
+    if (!session?.user?.id) {
+      return handleUnauthenticatedExtraction(file, pastedText);
+    }
+
+    const userId = session.user.id;
+    const user = await db.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const usageCheck = canUseReadAloud(user.plan, user.readAloudSessionsUsed, user.creditsResetAt);
+    if (!usageCheck.allowed) {
+      return NextResponse.json({ error: usageCheck.reason }, { status: 429 });
+    }
 
     // Handle pasted text
     if (pastedText) {
@@ -161,4 +160,50 @@ export async function POST(req: NextRequest) {
     console.error("[extract-text] Error:", err);
     return NextResponse.json({ error: "Failed to process request" }, { status: 500 });
   }
+}
+
+async function handleUnauthenticatedExtraction(
+  file: File | null,
+  pastedText: string | null
+) {
+  if (pastedText?.trim()) {
+    return NextResponse.json({
+      text: pastedText,
+      demo: true,
+    });
+  }
+
+  if (!file) {
+    return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return NextResponse.json(
+      { error: "File too large for the free tool (max 5MB)" },
+      { status: 400 }
+    );
+  }
+
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  if (file.type === "application/pdf") {
+    const extractedText = await extractTextFromPdf(buffer);
+    return NextResponse.json({
+      text: extractedText.trim() || "No readable text found in this PDF. Sign up to use OCR on scanned documents.",
+      demo: true,
+    });
+  }
+
+  if (file.type.startsWith("image/")) {
+    return NextResponse.json({
+      text: `Free screenshot OCR requires an account so usage can be tracked. Sign up to extract and read text from ${file.name}.`,
+      demo: true,
+    });
+  }
+
+  return NextResponse.json(
+    { error: "Unsupported file type. Please upload a PDF or image." },
+    { status: 400 }
+  );
 }

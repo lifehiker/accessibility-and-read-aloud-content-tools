@@ -69,14 +69,15 @@
 
 ## Phase 6: Upload Components
 
-- [x] src/components/upload/image-upload-dropzone.tsx
-- [x] src/components/upload/document-upload-dropzone.tsx
-- [x] src/components/upload/screenshot-upload-dropzone.tsx
+- [x] Upload dropzone built inline in dashboard/alt-text/page.tsx (drag-drop, file select, preview)
+- [x] PDF upload built inline in dashboard/read-aloud/page.tsx
+- [x] Screenshot upload built inline in dashboard/read-aloud/page.tsx
+- [x] Paste text tab built inline in dashboard/read-aloud/page.tsx
 
 ## Phase 7: Feature Components
 
-- [x] src/components/alt-text/alt-text-result-table.tsx
-- [x] src/components/read-aloud/audio-player.tsx (uses Web Speech API)
+- [x] Alt text results table built inline in dashboard/alt-text/page.tsx (thumbnail, edit, copy, CSV export)
+- [x] Audio player built inline in dashboard/read-aloud/page.tsx (Web Speech API, play/pause/stop, speed, voice)
 - [x] src/components/usage/usage-meter.tsx
 - [x] src/components/shared/upgrade-cta.tsx
 
@@ -98,9 +99,10 @@
 
 ## Phase 10: Email Templates
 
-- [x] src/emails/welcome.tsx
-- [x] src/emails/usage-reminder.tsx
-- [x] src/emails/upgrade-prompt.tsx
+- [x] sendWelcomeEmail in src/lib/email.ts (HTML email, no external template file needed)
+- [x] sendUsageReminderEmail in src/lib/email.ts
+- [x] sendUpgradePromptEmail in src/lib/email.ts
+- [x] All emails skip gracefully when RESEND_API_KEY not set
 
 ## Phase 11: Build + QA
 
@@ -115,5 +117,6 @@
 
 ## Phase 12: Deployment Docs
 
+- [x] Dockerfile fixed (--ignore-scripts, openssl, full node_modules, runtime db push, no public dir copy)
 - [x] FORGE_COMPLETION_AUDIT.md
 - [x] HUMAN_INPUT_NEEDED.md

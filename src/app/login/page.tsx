@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { getProviders, signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,17 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+
+  useEffect(() => {
+    getProviders()
+      .then((providers) => setGoogleEnabled(Boolean(providers?.google)))
+      .catch(() => setGoogleEnabled(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +73,31 @@ function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {googleEnabled && (
+              <div className="mb-4 space-y-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={googleLoading}
+                  onClick={() => {
+                    setGoogleLoading(true);
+                    signIn("google", { callbackUrl });
+                  }}
+                >
+                  {googleLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Continue with Google
+                </Button>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-500">Or use email</span>
+                  </div>
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1">
                 <Label htmlFor="email">Email</Label>

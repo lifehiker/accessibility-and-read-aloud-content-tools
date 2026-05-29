@@ -120,3 +120,23 @@ All in `src/components/ui/`: button, card, input, label, textarea, badge, progre
 | `tailwind.config.ts` | Tailwind CSS config |
 | `.env.local` | Local dev environment |
 | `.env.example` | Environment variable template |
+
+### Dockerfile
+- Multi-stage build: deps → builder → runner
+- `npm ci --ignore-scripts` in deps stage (avoids premature prisma generate)
+- `npx prisma generate` after `COPY . .` in builder stage
+- `apt-get install openssl` in both builder and runner stages
+- Full `node_modules` copied to runner for Prisma CLI availability
+- `CMD sh -c "npx prisma db push ... && node server.js"` — schema sync on startup
+- No `public/` COPY (directory does not exist)
+- Default `AUTH_SECRET` and `AUTH_TRUST_HOST=1` baked in for zero-config startup
+- `DATABASE_URL=file:/data/app.db` — writes to persistent /data volume
+
+### Intentionally Deferred (External Credentials Required)
+| Feature | Reason | Fallback |
+|---------|--------|---------|
+| AI alt text generation | Requires `OPENAI_API_KEY` | Demo results returned |
+| Screenshot OCR | Requires `OPENAI_API_KEY` | Demo message shown |
+| Stripe payments | Requires Stripe keys | Error toast, no crash |
+| Transactional email | Requires `RESEND_API_KEY` | Silent skip, no crash |
+| Google OAuth | Requires Google credentials | Falls back to email/password |
