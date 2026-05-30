@@ -34,7 +34,7 @@
     "clsx": "^2.1.1",
     "csv-stringify": "^6.5.1",
     "lucide-react": "^0.453.0",
-    "next": "15.3.0",
+    "next": "~15.3.6",
     "next-auth": "5.0.0-beta.28",
     "openai": "^4.71.0",
     "pdf-parse": "^1.1.1",
