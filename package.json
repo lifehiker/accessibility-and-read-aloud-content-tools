@@ -64,6 +64,7 @@
     "typescript": "^5.7.2"
   },
   "overrides": {
+    "sharp": "0.35.0",
     "next": {
       "postcss": "8.5.10"
     }
